@@ -36,6 +36,7 @@ Other commands:
 
 ```bash
 ./scripts/test.sh                            # timer logic tests
+/Applications/Budge.app/Contents/MacOS/Budge --open-at-login on   # same as the menu toggle (on/off)
 .build/debug/Budge --status                  # what Budge sees: idle time, mic, camera
 .build/debug/Budge --lineup docs/lineup-light.png
 .build/debug/Budge --render docs/nudge-light.png --avatar spike [--dark]

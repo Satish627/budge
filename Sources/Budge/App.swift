@@ -19,6 +19,10 @@ enum BudgeApp {
             render(Lineup(), to: args[i + 1], dark: dark)
             return
         }
+        if let i = args.firstIndex(of: "--open-at-login") {
+            setOpenAtLogin(i + 1 < args.count ? args[i + 1] : "")
+            return
+        }
         if args.contains("--status") {
             print("idle seconds:   \(Int(Signals.idleSeconds()))")
             print("apps using mic: \(Signals.appsUsingMic())")
@@ -30,6 +34,25 @@ enum BudgeApp {
         app.delegate = delegate
         app.setActivationPolicy(.accessory) // menu bar only, no Dock icon
         app.run()
+    }
+
+    /// `--open-at-login on|off` does the same as the menu toggle; any other value just prints the state.
+    /// Run it from the installed app: /Applications/Budge.app/Contents/MacOS/Budge --open-at-login on
+    static func setOpenAtLogin(_ value: String) {
+        let service = SMAppService.mainApp
+        do {
+            if value == "on" { try service.register() }
+            if value == "off" { try service.unregister() }
+        } catch {
+            print("Could not change Open at login: \(error.localizedDescription)")
+            exit(1)
+        }
+        switch service.status {
+        case .enabled: print("Open at login: on")
+        case .requiresApproval: print("Open at login: waiting for approval in System Settings > General > Login Items")
+        case .notRegistered: print("Open at login: off")
+        default: print("Open at login: unknown (\(service.status.rawValue))")
+        }
     }
 
     /// Writes a PNG of a view so the look can be checked without waiting 30 minutes.
