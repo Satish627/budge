@@ -1,0 +1,252 @@
+import AppKit
+import BudgeCore
+import ServiceManagement
+import SwiftUI
+
+@main
+@MainActor
+enum BudgeApp {
+    static func main() {
+        let args = CommandLine.arguments
+        let dark = args.contains("--dark")
+        if let i = args.firstIndex(of: "--render"), i + 1 < args.count {
+            let avatar = args.firstIndex(of: "--avatar").flatMap { Avatar(rawValue: args[$0 + 1]) } ?? .waddle
+            let nudge = NudgeView(avatar: avatar, prompt: Prompts.all[0], caption: "32 min at the keyboard", slideIn: false)
+            render(nudge, to: args[i + 1], dark: dark)
+            return
+        }
+        if let i = args.firstIndex(of: "--lineup"), i + 1 < args.count {
+            render(Lineup(), to: args[i + 1], dark: dark)
+            return
+        }
+        if args.contains("--status") {
+            print("idle seconds:   \(Int(Signals.idleSeconds()))")
+            print("apps using mic: \(Signals.appsUsingMic())")
+            print("camera in use:  \(Signals.cameraInUse())")
+            return
+        }
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        app.setActivationPolicy(.accessory) // menu bar only, no Dock icon
+        app.run()
+    }
+
+    /// Writes a PNG of a view so the look can be checked without waiting 30 minutes.
+    static func render(_ content: some View, to path: String, dark: Bool) {
+        let view = content
+            .background(dark ? Color(white: 0.10) : Color(white: 0.90))
+            .environment(\.colorScheme, dark ? .dark : .light)
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        guard let image = renderer.cgImage,
+              let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]),
+              (try? png.write(to: URL(fileURLWithPath: path))) != nil else {
+            print("Could not render preview")
+            exit(1)
+        }
+        print("Wrote \(path)")
+    }
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    private let defaults = UserDefaults.standard
+    private let tickEvery: TimeInterval = 15
+    private let snoozeFor: TimeInterval = 10 * 60
+
+    private lazy var clock = BreakClock(interval: TimeInterval(intervalMinutes * 60),
+                                        pausedUntil: defaults.object(forKey: "pausedUntil") as? Date)
+    private var prompts = Prompts()
+    private let nudge = NudgePanel()
+    private var statusItem: NSStatusItem!
+    private var timer: Timer?
+    private var lastTick = Date()
+    private var inCall = false
+
+    private var avatar: Avatar {
+        get { Avatar(rawValue: defaults.string(forKey: "avatar") ?? "") ?? .waddle }
+        set { defaults.set(newValue.rawValue, forKey: "avatar") }
+    }
+
+    private var intervalMinutes: Int {
+        get { defaults.integer(forKey: "intervalMinutes").nonZero ?? 30 }
+        set {
+            defaults.set(newValue, forKey: "intervalMinutes")
+            clock.interval = TimeInterval(newValue * 60)
+        }
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        let menu = NSMenu()
+        menu.delegate = self
+        statusItem.menu = menu
+        updateIcon()
+
+        timer = Timer.scheduledTimer(withTimeInterval: tickEvery, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tick() }
+        }
+        timer?.tolerance = 3
+
+        if CommandLine.arguments.contains("--demo") { nudgeNow() }
+    }
+
+    private func tick() {
+        let now = Date()
+        let elapsed = now.timeIntervalSince(lastTick)
+        lastTick = now
+        let idle = Signals.idleSeconds()
+        inCall = Signals.inCall()
+
+        let decision = clock.tick(elapsed: elapsed, idle: idle, inCall: inCall, now: now)
+        if idle >= clock.breakResetsAfter, nudge.isShowing {
+            nudge.hide() // you walked away: that was the break
+        }
+        if decision == .nudge, !nudge.isShowing {
+            showNudge(caption: "\(Int(clock.activeTime / 60)) min at the keyboard")
+        }
+        updateIcon()
+    }
+
+    private func showNudge(caption: String) {
+        nudge.show(
+            avatar: avatar, prompt: prompts.next(), caption: caption,
+            onDone: { [weak self] in self?.clock.tookBreak() },
+            onSnooze: { [weak self] in
+                guard let self else { return }
+                clock.snooze(for: snoozeFor, now: Date())
+            })
+    }
+
+    private func updateIcon() {
+        let paused = clock.isPaused(now: Date())
+        let image = NSImage(systemSymbolName: paused ? "pause.circle" : "figure.walk",
+                            accessibilityDescription: "Budge")
+        image?.isTemplate = true
+        statusItem.button?.image = image
+    }
+
+    // MARK: Menu
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let now = Date()
+        let paused = clock.isPaused(now: now)
+
+        let status: String
+        if paused, let until = clock.pausedUntil {
+            status = "Paused until \(Self.describe(until))"
+        } else if inCall, clock.minutesLeft(now: now) == 0 {
+            status = "You're on a call, I'll wait"
+        } else {
+            status = "Next nudge in ~\(clock.minutesLeft(now: now)) min"
+        }
+        menu.addItem(NSMenuItem(title: status, action: nil, keyEquivalent: ""))
+        menu.addItem(.separator())
+
+        menu.addItem(item("Nudge me now", #selector(nudgeNow)))
+        if paused {
+            menu.addItem(item("Resume", #selector(resume)))
+        } else {
+            menu.addItem(item("Pause for 1 hour", #selector(pauseHour)))
+            menu.addItem(item("Pause until tomorrow", #selector(pauseTomorrow)))
+        }
+        menu.addItem(.separator())
+
+        let every = NSMenuItem(title: "Nudge every", action: nil, keyEquivalent: "")
+        let choices = NSMenu()
+        for minutes in [20, 30, 45, 60] {
+            let choice = item("\(minutes) min", #selector(setInterval(_:)))
+            choice.tag = minutes
+            choice.state = minutes == intervalMinutes ? .on : .off
+            choices.addItem(choice)
+        }
+        every.submenu = choices
+        menu.addItem(every)
+
+        let pick = NSMenuItem(title: "Avatar", action: nil, keyEquivalent: "")
+        let cast = NSMenu()
+        for option in Avatar.allCases {
+            let choice = item("\(option.name): \(option.tagline)", #selector(setAvatar(_:)))
+            choice.representedObject = option.rawValue
+            choice.state = option == avatar ? .on : .off
+            cast.addItem(choice)
+        }
+        pick.submenu = cast
+        menu.addItem(pick)
+
+        let login = item("Open at login", #selector(toggleLogin))
+        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        menu.addItem(login)
+        menu.addItem(.separator())
+
+        let quit = NSMenuItem(title: "Quit Budge", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(quit)
+    }
+
+    private func item(_ title: String, _ action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        return item
+    }
+
+    @objc private func nudgeNow() {
+        showNudge(caption: "Quick break")
+    }
+
+    @objc private func pauseHour() {
+        pause(until: Date().addingTimeInterval(3600))
+    }
+
+    @objc private func pauseTomorrow() {
+        let morning = Calendar.current.nextDate(after: Date(), matching: DateComponents(hour: 6),
+                                                matchingPolicy: .nextTime) ?? Date().addingTimeInterval(12 * 3600)
+        pause(until: morning)
+    }
+
+    private func pause(until date: Date) {
+        clock.pause(until: date)
+        defaults.set(date, forKey: "pausedUntil")
+        nudge.hide()
+        updateIcon()
+    }
+
+    @objc private func resume() {
+        clock.resume()
+        defaults.removeObject(forKey: "pausedUntil")
+        updateIcon()
+    }
+
+    @objc private func setInterval(_ sender: NSMenuItem) {
+        intervalMinutes = sender.tag
+    }
+
+    @objc private func setAvatar(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let picked = Avatar(rawValue: raw) else { return }
+        avatar = picked
+        showNudge(caption: "Hi, I'm new here") // say hello so you see who you picked
+    }
+
+    @objc private func toggleLogin() {
+        do {
+            if SMAppService.mainApp.status == .enabled {
+                try SMAppService.mainApp.unregister()
+            } else {
+                try SMAppService.mainApp.register()
+            }
+        } catch {
+            NSApp.activate()
+            NSAlert(error: error).runModal()
+        }
+    }
+
+    private static func describe(_ date: Date) -> String {
+        let time = date.formatted(date: .omitted, time: .shortened)
+        return Calendar.current.isDateInToday(date) ? time : "tomorrow \(time)"
+    }
+}
+
+private extension Int {
+    var nonZero: Int? { self == 0 ? nil : self }
+}
