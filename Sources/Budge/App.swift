@@ -19,6 +19,16 @@ enum BudgeApp {
             case "week":
                 render(WeekView(avatar: avatar, days: WorkLog(markdown: sampleWeek).days, slideIn: false),
                        to: path, dark: dark)
+            case "review":
+                let sample = [
+                    ReviewRequest(repo: "acme/web", number: 812, title: "Fix onboarding status for new customers",
+                                  author: "maria", url: URL(string: "https://github.com/acme/web/pull/812")!),
+                    ReviewRequest(repo: "acme/api", number: 44, title: "Retry failed exports",
+                                  author: "jonas", url: URL(string: "https://github.com/acme/api/pull/44")!),
+                ]
+                let count = args.firstIndex(of: "--count").flatMap { Int(args[$0 + 1]) } ?? 1
+                render(ReviewView(avatar: avatar, requests: Array(sample.prefix(count)), slideIn: false),
+                       to: path, dark: dark)
             default:
                 let prompt = args.firstIndex(of: "--prompt").flatMap { Int(args[$0 + 1]) }.map { Prompts.all[$0] }
                 render(NudgeView(avatar: avatar, prompt: prompt ?? Prompts.all[14], caption: "32 min at the keyboard",
@@ -43,6 +53,13 @@ enum BudgeApp {
             print("idle seconds:   \(Int(Signals.idleSeconds()))")
             print("apps using mic: \(Signals.appsUsingMic())")
             print("camera in use:  \(Signals.cameraInUse())")
+            do {
+                let reviews = try GitHub.reviewRequestsNow()
+                print("waiting for your review: \(reviews.count)")
+                reviews.forEach { print("  \($0.key) by \($0.author): \($0.title)") }
+            } catch {
+                print("review check failed: \(error.localizedDescription)")
+            }
             return
         }
         let app = NSApplication.shared
@@ -170,10 +187,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let decision = clock.tick(elapsed: elapsed, idle: idle, busy: busyReason != nil, now: now)
         if idle >= clock.breakResetsAfter, nudge.isShowing {
-            nudge.hide() // you walked away: that was the break (an unanswered log question comes back later)
+            nudge.hide() // you walked away: that was the break (unanswered questions come back later)
         }
-        if !nudge.isShowing, idle < clock.stillWorkingIdle, busyReason == nil, !clock.isPaused(now: now),
-           EndOfDay.isDue(now: now, lastAsked: defaults.string(forKey: "logAskedDay")) {
+        checkReviewsIfDue(now: now, idle: idle)
+
+        // Only one bubble at a time, and only while you're here, free and not paused.
+        let free = { [self] in
+            !nudge.isShowing && idle < clock.stillWorkingIdle && busyReason == nil && !clock.isPaused(now: now)
+        }
+        if free(), reviewsOn, now >= reviewsLaterUntil {
+            let fresh = ReviewRequests.unseen(waitingReviews, seen: seenReviews)
+            if !fresh.isEmpty { showReviews(fresh) }
+        }
+        if free(), EndOfDay.isDue(now: now, lastAsked: defaults.string(forKey: "logAskedDay")) {
             askForLog()
         }
         if decision == .nudge, !nudge.isShowing {
@@ -232,6 +258,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(NSMenuItem(title: "Today: \(today.done) done · \(today.snoozed) snoozed",
                                     action: nil, keyEquivalent: ""))
         }
+        if reviewsOn { menu.addItem(reviewsMenuItem()) }
         menu.addItem(.separator())
 
         menu.addItem(item("Nudge me now", #selector(nudgeNow)))
@@ -268,6 +295,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pick.submenu = cast
         menu.addItem(pick)
 
+        let reviews = item("Review requests", #selector(toggleReviews))
+        reviews.state = reviewsOn ? .on : .off
+        menu.addItem(reviews)
+
         let login = item("Open at login", #selector(toggleLogin))
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
@@ -281,6 +312,84 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.target = self
         return item
+    }
+
+    // MARK: Review requests
+
+    private var reviewsOn: Bool {
+        get { defaults.object(forKey: "reviewsOn") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "reviewsOn") }
+    }
+    /// What GitHub said last time: every open PR waiting on your review.
+    private var waitingReviews: [ReviewRequest] = []
+    private var reviewsChecked = false
+    private var reviewError: String?
+    private var lastReviewCheck = Date.distantPast
+    private var reviewsLaterUntil = Date.distantPast
+    /// PRs you already opened from a popup, so they don't pop up again.
+    private var seenReviews: Set<String> {
+        get { Set(defaults.stringArray(forKey: "seenReviews") ?? []) }
+        set { defaults.set(Array(newValue).sorted(), forKey: "seenReviews") }
+    }
+
+    /// Every 2 minutes while you're around.
+    private func checkReviewsIfDue(now: Date, idle: TimeInterval) {
+        guard reviewsOn, idle < clock.breakResetsAfter, now.timeIntervalSince(lastReviewCheck) >= 120 else { return }
+        lastReviewCheck = now
+        Task {
+            do {
+                let current = try await GitHub.reviewRequests()
+                waitingReviews = current
+                reviewError = nil
+                seenReviews = ReviewRequests.prune(seenReviews, to: current)
+            } catch {
+                reviewError = error.localizedDescription
+            }
+            reviewsChecked = true
+        }
+    }
+
+    private func showReviews(_ requests: [ReviewRequest]) {
+        nudge.present(ReviewView(
+            avatar: avatar, requests: requests,
+            onOpen: { [weak self] urls in
+                guard let self else { return }
+                urls.forEach { NSWorkspace.shared.open($0) }
+                seenReviews.formUnion(requests.map(\.key))
+                nudge.hide()
+            },
+            onLater: { [weak self] in
+                guard let self else { return }
+                reviewsLaterUntil = Date().addingTimeInterval(3600)
+                nudge.hide()
+            }))
+    }
+
+    private func reviewsMenuItem() -> NSMenuItem {
+        if let reviewError {
+            return NSMenuItem(title: "Couldn't check reviews: \(reviewError)", action: nil, keyEquivalent: "")
+        }
+        if !reviewsChecked {
+            return NSMenuItem(title: "Checking for review requests…", action: nil, keyEquivalent: "")
+        }
+        let count = waitingReviews.count
+        if count == 0 {
+            return NSMenuItem(title: "No PRs waiting for your review", action: nil, keyEquivalent: "")
+        }
+        return item(count == 1 ? "1 PR waiting for your review" : "\(count) PRs waiting for your review",
+                    #selector(openReviewList))
+    }
+
+    @objc private func openReviewList() {
+        NSWorkspace.shared.open(URL(string: "https://github.com/pulls/review-requested")!)
+    }
+
+    @objc private func toggleReviews() {
+        reviewsOn.toggle()
+        lastReviewCheck = .distantPast // check on the next tick
+        waitingReviews = []
+        reviewsChecked = false
+        reviewError = nil
     }
 
     // MARK: End-of-day log

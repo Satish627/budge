@@ -31,9 +31,15 @@ From 16:00, once a day, your avatar asks what you finished today. On Fridays, sa
 
 ![Your week](docs/week-light.png)
 
+## Review requests
+
+When someone asks for your review on GitHub, directly or through a team you're on, your avatar pops up with the PR. Click it to open the PR. **Later** reminds you again in an hour. The menu shows how many PRs are waiting. It uses the `gh` command you're already signed in to and checks every 2 minutes.
+
+![A review request](docs/review-light.png)
+
 ## Menu
 
-Nudge me now · Write today's log · This week's log · Pause for 1 hour · Pause until tomorrow · Nudge every 20/30/45/60 min · Avatar · Open at login · Quit
+Nudge me now · Write today's log · This week's log · Pause for 1 hour · Pause until tomorrow · Nudge every 20/30/45/60 min · Avatar · Review requests · Open at login · Quit
 
 ## Build and run
 
@@ -51,14 +57,14 @@ Other commands:
 ./scripts/test.sh                            # timer logic tests
 ./scripts/make-icon.sh                       # redraws Resources/AppIcon.icns
 /Applications/Budge.app/Contents/MacOS/Budge --open-at-login on   # same as the menu toggle (on/off)
-.build/debug/Budge --status                  # what Budge sees: idle time, mic, camera
+.build/debug/Budge --status                  # what Budge sees: idle time, mic, camera, review requests
 .build/debug/Budge --lineup docs/lineup-light.png
 .build/debug/Budge --render docs/nudge-light.png --avatar spike [--dark]
 ```
 
 ## Privacy
 
-Budge asks for no permissions, has no network code, and sends nothing anywhere. It reads only how long since your last key press and whether the mic or camera is on. Your end-of-day notes are saved only on your Mac, in `~/Library/Application Support/Budge/work-log.md`.
+Budge asks for no permissions and has no network code of its own. For review requests it runs your `gh` command, which asks GitHub which open PRs want your review. Turn that off with **Review requests** in the menu. Apart from that, it reads only how long since your last key press and whether the mic or camera is on. Your end-of-day notes are saved only on your Mac, in `~/Library/Application Support/Budge/work-log.md`.
 
 ## Sources
 
