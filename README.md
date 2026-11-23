@@ -13,7 +13,8 @@ A tiny Mac menu-bar app. Every 30 minutes at the keyboard, a little character po
 - **Every 30 minutes of keyboard time.** In a small Columbia trial, a 5-minute walk every 30 minutes lowered blood sugar and blood pressure. Walking once an hour did nothing for blood sugar. You can switch to 20, 45 or 60 minutes.
 - **Only real work counts.** Time with no keyboard or mouse for more than a minute isn't counted.
 - **5 minutes away means you already took a break**, so the clock starts over. The same happens after sleep.
-- **It waits while you're on a call**, meaning an app is using the mic or a camera is on.
+- **It waits while you're on a call**, meaning an app is using the mic or a camera is on, **or when the app in front is full screen** (slides, video). Open the menu to see when it's holding: "You're on a call, nudges wait".
+- **It counts Done vs Snoozed for today** in the menu. If you snooze more than you take breaks, try a longer interval.
 - **It asks you to move, not to "sit up straight".** There's no good evidence that one posture prevents back pain. Changing position is what helps.
 
 If you ignore a nudge, it hides after 90 seconds and comes back in 10 minutes.
@@ -38,14 +39,14 @@ Other commands:
 ./scripts/test.sh                            # timer logic tests
 ./scripts/make-icon.sh                       # redraws Resources/AppIcon.icns
 /Applications/Budge.app/Contents/MacOS/Budge --open-at-login on   # same as the menu toggle (on/off)
-.build/debug/Budge --status                  # what Budge sees: idle time, mic, camera
+.build/debug/Budge --status                  # what Budge sees: idle time, mic, camera, full screen
 .build/debug/Budge --lineup docs/lineup-light.png
 .build/debug/Budge --render docs/nudge-light.png --avatar spike [--dark]
 ```
 
 ## Privacy
 
-Budge asks for no permissions, has no network code, and sends nothing anywhere. It reads how long since your last key press and whether the mic or camera is on, and nothing else.
+Budge asks for no permissions, has no network code, and sends nothing anywhere. It reads how long since your last key press, whether the mic or camera is on, and the size of the front app's windows, and nothing else.
 
 ## Sources
 

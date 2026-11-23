@@ -31,6 +31,7 @@ enum BudgeApp {
             print("idle seconds:   \(Int(Signals.idleSeconds()))")
             print("apps using mic: \(Signals.appsUsingMic())")
             print("camera in use:  \(Signals.cameraInUse())")
+            print("full-screen app: \(Signals.fullScreenApp() ?? "none")")
             return
         }
         let app = NSApplication.shared
@@ -93,7 +94,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var timer: Timer?
     private var lastTick = Date()
-    private var inCall = false
+    /// Why nudges are on hold right now ("You're on a call"), or nil.
+    private var busyReason: String?
+
+    /// Done vs snoozed today, kept across restarts.
+    private var tally: DayTally {
+        get { defaults.data(forKey: "tally").flatMap { try? JSONDecoder().decode(DayTally.self, from: $0) } ?? DayTally() }
+        set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "tally") }
+    }
 
     private var avatar: Avatar {
         get { Avatar(rawValue: defaults.string(forKey: "avatar") ?? "") ?? .waddle }
@@ -128,9 +136,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let elapsed = now.timeIntervalSince(lastTick)
         lastTick = now
         let idle = Signals.idleSeconds()
-        inCall = Signals.inCall()
+        refreshBusy()
 
-        let decision = clock.tick(elapsed: elapsed, idle: idle, inCall: inCall, now: now)
+        let decision = clock.tick(elapsed: elapsed, idle: idle, busy: busyReason != nil, now: now)
         if idle >= clock.breakResetsAfter, nudge.isShowing {
             nudge.hide() // you walked away: that was the break
         }
@@ -140,13 +148,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateIcon()
     }
 
-    private func showNudge(caption: String) {
+    private func refreshBusy() {
+        if Signals.inCall() {
+            busyReason = "You're on a call"
+        } else if let app = Signals.fullScreenApp() {
+            busyReason = "\(app) is full screen"
+        } else {
+            busyReason = nil
+        }
+    }
+
+    /// `counted: false` for the hello when you pick an avatar, so it doesn't skew today's tally.
+    private func showNudge(caption: String, counted: Bool = true) {
         nudge.show(
             avatar: avatar, prompt: prompts.next(), caption: caption,
-            onDone: { [weak self] in self?.clock.tookBreak() },
+            onDone: { [weak self] in
+                guard let self else { return }
+                clock.tookBreak()
+                if counted { tally.record(done: true, at: Date()) }
+            },
             onSnooze: { [weak self] in
                 guard let self else { return }
                 clock.snooze(for: snoozeFor, now: Date())
+                if counted { tally.record(done: false, at: Date()) }
             })
     }
 
@@ -165,15 +189,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let now = Date()
         let paused = clock.isPaused(now: now)
 
+        refreshBusy() // live, so you can check it during a call
         let status: String
         if paused, let until = clock.pausedUntil {
             status = "Paused until \(Self.describe(until))"
-        } else if inCall, clock.minutesLeft(now: now) == 0 {
-            status = "You're on a call, I'll wait"
+        } else if let busyReason {
+            status = "\(busyReason), nudges wait"
         } else {
             status = "Next nudge in ~\(clock.minutesLeft(now: now)) min"
         }
         menu.addItem(NSMenuItem(title: status, action: nil, keyEquivalent: ""))
+        let today = tally.counts(on: now)
+        if today.done + today.snoozed > 0 {
+            menu.addItem(NSMenuItem(title: "Today: \(today.done) done · \(today.snoozed) snoozed",
+                                    action: nil, keyEquivalent: ""))
+        }
         menu.addItem(.separator())
 
         menu.addItem(item("Nudge me now", #selector(nudgeNow)))
@@ -256,7 +286,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func setAvatar(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let picked = Avatar(rawValue: raw) else { return }
         avatar = picked
-        showNudge(caption: "Hi, I'm new here") // say hello so you see who you picked
+        showNudge(caption: "Hi, I'm new here", counted: false) // say hello so you see who you picked
     }
 
     @objc private func toggleLogin() {

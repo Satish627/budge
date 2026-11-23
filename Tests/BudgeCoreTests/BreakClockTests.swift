@@ -6,12 +6,12 @@ private let t0 = Date(timeIntervalSince1970: 1_000_000)
 
 /// Runs the clock for `minutes` of ticks every 15 s and returns the first nudge time, if any.
 private func run(_ clock: inout BreakClock, minutes: Double, idle: TimeInterval = 5,
-                 inCall: Bool = false, from start: Date = t0) -> Date? {
+                 busy: Bool = false, from start: Date = t0) -> Date? {
     var now = start
     let end = start.addingTimeInterval(minutes * 60)
     while now < end {
         now = now.addingTimeInterval(15)
-        if clock.tick(elapsed: 15, idle: idle, inCall: inCall, now: now) == .nudge { return now }
+        if clock.tick(elapsed: 15, idle: idle, busy: busy, now: now) == .nudge { return now }
     }
     return nil
 }
@@ -36,22 +36,22 @@ private func run(_ clock: inout BreakClock, minutes: Double, idle: TimeInterval 
 @Test func fiveMinutesAwayResetsTheClock() {
     var clock = BreakClock(interval: 30 * 60)
     _ = run(&clock, minutes: 20)
-    _ = clock.tick(elapsed: 15, idle: 5 * 60, inCall: false, now: t0.addingTimeInterval(21 * 60))
+    _ = clock.tick(elapsed: 15, idle: 5 * 60, busy: false, now: t0.addingTimeInterval(21 * 60))
     #expect(clock.activeTime == 0)
 }
 
 @Test func sleepGapResetsTheClock() {
     var clock = BreakClock(interval: 30 * 60)
     _ = run(&clock, minutes: 20)
-    _ = clock.tick(elapsed: 3600, idle: 2, inCall: false, now: t0.addingTimeInterval(80 * 60))
+    _ = clock.tick(elapsed: 3600, idle: 2, busy: false, now: t0.addingTimeInterval(80 * 60))
     #expect(clock.activeTime == 0)
 }
 
 @Test func waitsWhileOnACallThenNudges() {
     var clock = BreakClock(interval: 30 * 60)
-    #expect(run(&clock, minutes: 45, inCall: true) == nil)
+    #expect(run(&clock, minutes: 45, busy: true) == nil)
     let after = t0.addingTimeInterval(45 * 60)
-    #expect(clock.tick(elapsed: 15, idle: 5, inCall: false, now: after) == .nudge)
+    #expect(clock.tick(elapsed: 15, idle: 5, busy: false, now: after) == .nudge)
 }
 
 @Test func snoozeHoldsForTenMinutes() {

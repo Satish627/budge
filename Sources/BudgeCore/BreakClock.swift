@@ -1,7 +1,7 @@
 import Foundation
 
 /// Decides when to nudge. Counts only time you are actually at the keyboard,
-/// treats a long idle gap as a break you already took, and holds while you are on a call.
+/// treats a long idle gap as a break you already took, and holds while you are busy (call, full screen).
 public struct BreakClock: Sendable {
     public enum Decision: Equatable, Sendable { case wait, nudge }
 
@@ -22,14 +22,14 @@ public struct BreakClock: Sendable {
     }
 
     /// `elapsed` is the time since the previous tick; a big gap (sleep) counts as a break.
-    public mutating func tick(elapsed: TimeInterval, idle: TimeInterval, inCall: Bool, now: Date) -> Decision {
+    public mutating func tick(elapsed: TimeInterval, idle: TimeInterval, busy: Bool, now: Date) -> Decision {
         if idle >= breakResetsAfter || elapsed >= breakResetsAfter {
             tookBreak()
             return .wait
         }
         if isPaused(now: now) { return .wait }
         if idle < stillWorkingIdle { activeTime += elapsed }
-        guard activeTime >= interval, !inCall else { return .wait }
+        guard activeTime >= interval, !busy else { return .wait }
         if let snoozedUntil, now < snoozedUntil { return .wait }
         return .nudge
     }
