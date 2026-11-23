@@ -1,5 +1,3 @@
-import AppKit
-import BudgeCore
 import CoreAudio
 import CoreGraphics
 import CoreMediaIO
@@ -10,37 +8,6 @@ enum Signals {
     /// Seconds since the last key press, click or mouse move.
     static func idleSeconds() -> TimeInterval {
         CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
-    }
-
-    /// Name of the app in front if it fills a whole screen (slides, full-screen video), else nil.
-    ///
-    /// Only checks screens where a maximized window can't look full screen: the main screen
-    /// (it always has a menu bar) and any screen that keeps room for one. On a screen without
-    /// a menu bar, a maximized window and a full-screen app look the same, so it is skipped
-    /// rather than risk Budge never nudging.
-    @MainActor
-    static func fullScreenApp() -> String? {
-        guard let front = NSWorkspace.shared.frontmostApplication,
-              front.bundleIdentifier != Bundle.main.bundleIdentifier,
-              let main = NSScreen.screens.first,
-              let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
-                                                       kCGNullWindowID) as? [[String: Any]] else { return nil }
-
-        let frontWindows = windows.compactMap { window -> CGRect? in
-            guard window[kCGWindowOwnerPID as String] as? pid_t == front.processIdentifier,
-                  (window[kCGWindowLayer as String] as? Int ?? -1) >= 0,
-                  let bounds = window[kCGWindowBounds as String] as? NSDictionary else { return nil }
-            return CGRect(dictionaryRepresentation: bounds)
-        }
-
-        // Window bounds use a top-left origin; NSScreen uses bottom-left.
-        let checkable = NSScreen.screens.filter { $0 == main || $0.visibleFrame.maxY < $0.frame.maxY }
-        let covered = checkable.contains { screen in
-            let frame = CGRect(x: screen.frame.minX, y: main.frame.maxY - screen.frame.maxY,
-                               width: screen.frame.width, height: screen.frame.height)
-            return FullScreen.isCovered(frame, byAnyOf: frontWindows)
-        }
-        return covered ? (front.localizedName ?? "An app") : nil
     }
 
     /// True while a call is likely: some app is recording the mic, or a camera is on.

@@ -31,7 +31,6 @@ enum BudgeApp {
             print("idle seconds:   \(Int(Signals.idleSeconds()))")
             print("apps using mic: \(Signals.appsUsingMic())")
             print("camera in use:  \(Signals.cameraInUse())")
-            print("full-screen app: \(Signals.fullScreenApp() ?? "none")")
             return
         }
         let app = NSApplication.shared
@@ -149,13 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func refreshBusy() {
-        if Signals.inCall() {
-            busyReason = "You're on a call"
-        } else if let app = Signals.fullScreenApp() {
-            busyReason = "\(app) is full screen"
-        } else {
-            busyReason = nil
-        }
+        busyReason = Signals.inCall() ? "You're on a call" : nil
     }
 
     /// `counted: false` for the hello when you pick an avatar, so it doesn't skew today's tally.

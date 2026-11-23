@@ -1,4 +1,3 @@
-import CoreGraphics
 import Foundation
 import Testing
 @testable import BudgeCore
@@ -34,20 +33,4 @@ private let utc: Calendar = {
     tally.record(done: true, at: noon, calendar: utc)
     let restored = try JSONDecoder().decode(DayTally.self, from: JSONEncoder().encode(tally))
     #expect(restored == tally)
-}
-
-private let laptop = CGRect(x: 0, y: 0, width: 1512, height: 982)
-
-@Test func fullScreenWindowCoversTheScreen() {
-    #expect(FullScreen.isCovered(laptop, byAnyOf: [laptop]))
-}
-
-@Test func maximizedWindowBelowMenuBarDoesNotCount() {
-    let maximized = CGRect(x: 0, y: 33, width: 1512, height: 876)
-    #expect(!FullScreen.isCovered(laptop, byAnyOf: [maximized]))
-}
-
-@Test func windowOnAnotherScreenDoesNotCount() {
-    let external = CGRect(x: 1512, y: 0, width: 1920, height: 1080)
-    #expect(!FullScreen.isCovered(laptop, byAnyOf: [external]))
 }

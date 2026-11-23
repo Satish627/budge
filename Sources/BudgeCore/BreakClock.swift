@@ -1,7 +1,7 @@
 import Foundation
 
 /// Decides when to nudge. Counts only time you are actually at the keyboard,
-/// treats a long idle gap as a break you already took, and holds while you are busy (call, full screen).
+/// treats a long idle gap as a break you already took, and holds while you are busy (on a call).
 public struct BreakClock: Sendable {
     public enum Decision: Equatable, Sendable { case wait, nudge }
 
