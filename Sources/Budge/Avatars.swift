@@ -36,20 +36,43 @@ enum Avatar: String, CaseIterable, Sendable {
 /// Draws the avatar, animated. Every character fits an 84×92 box, standing on the bottom edge.
 struct AvatarView: View {
     let avatar: Avatar
+    /// Freezes the animation at this moment, for the app icon.
+    var frozenAt: Double?
 
     var body: some View {
-        TimelineView(.animation) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
-            ZStack {
-                switch avatar {
-                case .waddle: Waddle(t: t)
-                case .spike: Spike(t: t)
-                case .bleep: Bleep(t: t)
-                case .mochi: Mochi(t: t)
-                }
-            }
-            .frame(width: 84, height: 92)
+        if let frozenAt {
+            pose(at: frozenAt)
+        } else {
+            TimelineView(.animation) { pose(at: $0.date.timeIntervalSinceReferenceDate) }
         }
+    }
+
+    private func pose(at t: Double) -> some View {
+        ZStack {
+            switch avatar {
+            case .waddle: Waddle(t: t)
+            case .spike: Spike(t: t)
+            case .bleep: Bleep(t: t)
+            case .mochi: Mochi(t: t)
+            }
+        }
+        .frame(width: 84, height: 92)
+    }
+}
+
+/// The app icon: Waddle on an icy rounded square, on Apple's 1024 grid (824 artwork).
+struct AppIconView: View {
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 185, style: .continuous)
+                .fill(LinearGradient(colors: [Color(red: 0.87, green: 0.95, blue: 1.0),
+                                              Color(red: 0.55, green: 0.76, blue: 0.96)],
+                                     startPoint: .top, endPoint: .bottom))
+                .frame(width: 824, height: 824)
+            // t = 0.98: standing straight, eyes open, flippers mid-flap
+            AvatarView(avatar: .waddle, frozenAt: 0.98).scaleEffect(6.8)
+        }
+        .frame(width: 1024, height: 1024)
     }
 }
 

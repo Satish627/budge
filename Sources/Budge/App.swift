@@ -19,6 +19,10 @@ enum BudgeApp {
             render(Lineup(), to: args[i + 1], dark: dark)
             return
         }
+        if let i = args.firstIndex(of: "--icon"), i + 1 < args.count {
+            writePNG(AppIconView(), to: args[i + 1], scale: 1) // transparent corners
+            return
+        }
         if let i = args.firstIndex(of: "--open-at-login") {
             setOpenAtLogin(i + 1 < args.count ? args[i + 1] : "")
             return
@@ -60,8 +64,12 @@ enum BudgeApp {
         let view = content
             .background(dark ? Color(white: 0.10) : Color(white: 0.90))
             .environment(\.colorScheme, dark ? .dark : .light)
+        writePNG(view, to: path, scale: 2)
+    }
+
+    static func writePNG(_ view: some View, to path: String, scale: CGFloat) {
         let renderer = ImageRenderer(content: view)
-        renderer.scale = 2
+        renderer.scale = scale
         guard let image = renderer.cgImage,
               let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]),
               (try? png.write(to: URL(fileURLWithPath: path))) != nil else {

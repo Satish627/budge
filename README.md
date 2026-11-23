@@ -1,3 +1,5 @@
+<img src="docs/icon.png" width="96" alt="Budge icon">
+
 # Budge
 
 A tiny Mac menu-bar app. Every 30 minutes at the keyboard, a little character pops up in the corner and asks you to move.
@@ -25,9 +27,7 @@ Nudge me now · Pause for 1 hour · Pause until tomorrow · Nudge every 20/30/45
 You only need the Xcode Command Line Tools (`xcode-select --install`), not full Xcode.
 
 ```bash
-./scripts/build-app.sh                       # builds build/Budge.app
-cp -R build/Budge.app /Applications/
-open /Applications/Budge.app
+./scripts/install.sh                         # builds, copies to /Applications, opens it
 ```
 
 Then turn on **Open at login** from the menu-bar icon.
@@ -36,6 +36,7 @@ Other commands:
 
 ```bash
 ./scripts/test.sh                            # timer logic tests
+./scripts/make-icon.sh                       # redraws Resources/AppIcon.icns
 /Applications/Budge.app/Contents/MacOS/Budge --open-at-login on   # same as the menu toggle (on/off)
 .build/debug/Budge --status                  # what Budge sees: idle time, mic, camera
 .build/debug/Budge --lineup docs/lineup-light.png
