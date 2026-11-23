@@ -19,6 +19,10 @@ A tiny Mac menu-bar app. Every 30 minutes at the keyboard, a little character po
 
 If you ignore a nudge, it hides after 90 seconds and comes back in 10 minutes.
 
+## What it asks you to do
+
+23 prompts: 14 stretches (neck, shoulders and back, hands, legs), 3 ways to move, 3 eye breaks and a breathing one. Every 4th nudge is about water, so about every 2 hours. The same kind never comes twice in a row. The full list is in [Prompts.swift](Sources/BudgeCore/Prompts.swift).
+
 ## Menu
 
 Nudge me now · Pause for 1 hour · Pause until tomorrow · Nudge every 20/30/45/60 min · Avatar · Open at login · Quit

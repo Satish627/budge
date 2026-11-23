@@ -11,7 +11,9 @@ enum BudgeApp {
         let dark = args.contains("--dark")
         if let i = args.firstIndex(of: "--render"), i + 1 < args.count {
             let avatar = args.firstIndex(of: "--avatar").flatMap { Avatar(rawValue: args[$0 + 1]) } ?? .waddle
-            let nudge = NudgeView(avatar: avatar, prompt: Prompts.all[0], caption: "32 min at the keyboard", slideIn: false)
+            let prompt = args.firstIndex(of: "--prompt").flatMap { Int(args[$0 + 1]) }.map { Prompts.all[$0] }
+            let nudge = NudgeView(avatar: avatar, prompt: prompt ?? Prompts.all[14], caption: "32 min at the keyboard",
+                                  slideIn: false)
             render(nudge, to: args[i + 1], dark: dark)
             return
         }
