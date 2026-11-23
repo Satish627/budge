@@ -90,6 +90,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                         pausedUntil: defaults.object(forKey: "pausedUntil") as? Date)
     private var prompts = Prompts()
     private let nudge = NudgePanel()
+    /// Drawn once, the first time the menu opens.
+    private lazy var menuImages: [Avatar: NSImage] = Dictionary(
+        uniqueKeysWithValues: Avatar.allCases.compactMap { avatar in avatar.menuImage().map { (avatar, $0) } })
     private var statusItem: NSStatusItem!
     private var timer: Timer?
     private var lastTick = Date()
@@ -225,6 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let choice = item("\(option.name): \(option.tagline)", #selector(setAvatar(_:)))
             choice.representedObject = option.rawValue
             choice.state = option == avatar ? .on : .off
+            choice.image = menuImages[option]
             cast.addItem(choice)
         }
         pick.submenu = cast

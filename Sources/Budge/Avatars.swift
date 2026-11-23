@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The characters you can pick from the menu bar.
@@ -30,6 +31,18 @@ enum Avatar: String, CaseIterable, Sendable {
         case .bleep: Color(red: 0.16, green: 0.50, blue: 0.86)
         case .mochi: Color(red: 0.18, green: 0.62, blue: 0.49)
         }
+    }
+}
+
+extension Avatar {
+    /// A small still picture of the character, for the Avatar menu.
+    @MainActor
+    func menuImage(height: CGFloat = 30) -> NSImage? {
+        let renderer = ImageRenderer(content: AvatarView(avatar: self, frozenAt: 0.98).padding(8))
+        renderer.scale = 3
+        guard let image = renderer.nsImage else { return nil }
+        image.size = NSSize(width: height * image.size.width / image.size.height, height: height)
+        return image
     }
 }
 
