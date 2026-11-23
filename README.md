@@ -23,9 +23,17 @@ If you ignore a nudge, it hides after 90 seconds and comes back in 10 minutes.
 
 23 prompts: 14 stretches (neck, shoulders and back, hands, legs), 3 ways to move, 3 eye breaks and a breathing one. Every 4th nudge is about water, so about every 2 hours. The same kind never comes twice in a row. The full list is in [Prompts.swift](Sources/BudgeCore/Prompts.swift).
 
+## End-of-day log
+
+From 16:00, once a day, your avatar asks what you finished today. On Fridays, saving also shows your week with a button to copy it for standup. You can open both from the menu at any time.
+
+![The end-of-day question](docs/log-light.png)
+
+![Your week](docs/week-light.png)
+
 ## Menu
 
-Nudge me now · Pause for 1 hour · Pause until tomorrow · Nudge every 20/30/45/60 min · Avatar · Open at login · Quit
+Nudge me now · Write today's log · This week's log · Pause for 1 hour · Pause until tomorrow · Nudge every 20/30/45/60 min · Avatar · Open at login · Quit
 
 ## Build and run
 
@@ -50,7 +58,7 @@ Other commands:
 
 ## Privacy
 
-Budge asks for no permissions, has no network code, and sends nothing anywhere. It reads only how long since your last key press and whether the mic or camera is on.
+Budge asks for no permissions, has no network code, and sends nothing anywhere. It reads only how long since your last key press and whether the mic or camera is on. Your end-of-day notes are saved only on your Mac, in `~/Library/Application Support/Budge/work-log.md`.
 
 ## Sources
 

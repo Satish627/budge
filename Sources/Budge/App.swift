@@ -11,10 +11,20 @@ enum BudgeApp {
         let dark = args.contains("--dark")
         if let i = args.firstIndex(of: "--render"), i + 1 < args.count {
             let avatar = args.firstIndex(of: "--avatar").flatMap { Avatar(rawValue: args[$0 + 1]) } ?? .waddle
-            let prompt = args.firstIndex(of: "--prompt").flatMap { Int(args[$0 + 1]) }.map { Prompts.all[$0] }
-            let nudge = NudgeView(avatar: avatar, prompt: prompt ?? Prompts.all[14], caption: "32 min at the keyboard",
-                                  slideIn: false)
-            render(nudge, to: args[i + 1], dark: dark)
+            let path = args[i + 1]
+            switch args.firstIndex(of: "--screen").map({ args[$0 + 1] }) {
+            case "log":
+                render(LogPromptView(avatar: avatar, previewText: "Fixed the onboarding status bug, reviewed 2 PRs"),
+                       to: path, dark: dark)
+            case "week":
+                render(WeekView(avatar: avatar, days: WorkLog(markdown: sampleWeek).days, slideIn: false),
+                       to: path, dark: dark)
+            default:
+                let prompt = args.firstIndex(of: "--prompt").flatMap { Int(args[$0 + 1]) }.map { Prompts.all[$0] }
+                render(NudgeView(avatar: avatar, prompt: prompt ?? Prompts.all[14], caption: "32 min at the keyboard",
+                                 slideIn: false),
+                       to: path, dark: dark)
+            }
             return
         }
         if let i = args.firstIndex(of: "--lineup"), i + 1 < args.count {
@@ -41,6 +51,21 @@ enum BudgeApp {
         app.setActivationPolicy(.accessory) // menu bar only, no Dock icon
         app.run()
     }
+
+    /// Made-up week for the `--render --screen week` preview.
+    static let sampleWeek = """
+        ## 2026-11-16 Monday
+        - Fixed the onboarding status bug
+        - Reviewed 2 PRs
+        ## 2026-11-17 Tuesday
+        - Shipped ticket search in the support tool
+        ## 2026-11-18 Wednesday
+        - Planning for next cycle, 3 support calls
+        ## 2026-11-19 Thursday
+        - Built Budge
+        ## 2026-11-20 Friday
+        - Wrote release notes, cleaned up old branches
+        """
 
     /// `--open-at-login on|off` does the same as the menu toggle; any other value just prints the state.
     /// Run it from the installed app: /Applications/Budge.app/Contents/MacOS/Budge --open-at-login on
@@ -133,6 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         timer?.tolerance = 3
 
         if CommandLine.arguments.contains("--demo") { nudgeNow() }
+        if CommandLine.arguments.contains("--demo-log") { askForLog() }
     }
 
     private func tick() {
@@ -144,7 +170,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let decision = clock.tick(elapsed: elapsed, idle: idle, busy: busyReason != nil, now: now)
         if idle >= clock.breakResetsAfter, nudge.isShowing {
-            nudge.hide() // you walked away: that was the break
+            nudge.hide() // you walked away: that was the break (an unanswered log question comes back later)
+        }
+        if !nudge.isShowing, idle < clock.stillWorkingIdle, busyReason == nil, !clock.isPaused(now: now),
+           EndOfDay.isDue(now: now, lastAsked: defaults.string(forKey: "logAskedDay")) {
+            askForLog()
         }
         if decision == .nudge, !nudge.isShowing {
             showNudge(caption: "\(Int(clock.activeTime / 60)) min at the keyboard")
@@ -205,6 +235,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         menu.addItem(item("Nudge me now", #selector(nudgeNow)))
+        menu.addItem(item("Write today's log…", #selector(askForLog)))
+        menu.addItem(item("This week's log…", #selector(showWeek)))
         if paused {
             menu.addItem(item("Resume", #selector(resume)))
         } else {
@@ -249,6 +281,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.target = self
         return item
+    }
+
+    // MARK: End-of-day log
+
+    /// Plain Markdown, so you can open and edit it anywhere. Stays on this Mac.
+    private let logURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Budge/work-log.md")
+
+    private func loadLog() -> WorkLog {
+        WorkLog(markdown: (try? String(contentsOf: logURL, encoding: .utf8)) ?? "")
+    }
+
+    private func saveLog(_ log: WorkLog) throws {
+        try FileManager.default.createDirectory(at: logURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try log.markdown.write(to: logURL, atomically: true, encoding: .utf8)
+    }
+
+    @objc private func askForLog() {
+        nudge.present(LogPromptView(
+            avatar: avatar,
+            onSave: { [weak self] text in self?.finishLog(saving: text) },
+            onSkip: { [weak self] in self?.finishLog(saving: nil) }))
+    }
+
+    private func finishLog(saving text: String?) {
+        nudge.hide()
+        let now = Date()
+        defaults.set(WorkLog.dayKey(now, .current), forKey: "logAskedDay")
+        guard let text else { return }
+        var log = loadLog()
+        log.add(text, on: now)
+        do {
+            try saveLog(log)
+        } catch {
+            NSApp.activate()
+            NSAlert(error: error).runModal()
+            return
+        }
+        if EndOfDay.isFriday(now) { showWeek() }
+    }
+
+    @objc private func showWeek() {
+        nudge.present(WeekView(
+            avatar: avatar, days: loadLog().week(of: Date()),
+            onOpenLog: { [weak self] in self?.openLog() },
+            onClose: { [weak self] in self?.nudge.hide() }))
+    }
+
+    private func openLog() {
+        if !FileManager.default.fileExists(atPath: logURL.path) { try? saveLog(WorkLog()) }
+        NSWorkspace.shared.open(logURL)
     }
 
     @objc private func nudgeNow() {

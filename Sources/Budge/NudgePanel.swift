@@ -2,7 +2,8 @@ import AppKit
 import BudgeCore
 import SwiftUI
 
-/// A transparent, always-on-top window in the top-right corner that never steals focus.
+/// A transparent, always-on-top window in the top-right corner. It never brings Budge to the
+/// front; clicking the log's text box lets you type into it without switching apps.
 @MainActor
 final class NudgePanel {
     private var panel: NSPanel?
@@ -10,21 +11,27 @@ final class NudgePanel {
 
     var isShowing: Bool { panel != nil }
 
-    /// Shows the nudge. If you ignore it for `timeout`, it hides and counts as a snooze.
-    func show(avatar: Avatar, prompt: Prompt, caption: String, timeout: Duration = .seconds(90),
+    /// Shows a break nudge. If you ignore it for 90 seconds, it hides and counts as a snooze.
+    func show(avatar: Avatar, prompt: Prompt, caption: String,
               onDone: @escaping () -> Void, onSnooze: @escaping () -> Void) {
-        hide(animated: false)
-
         let view = NudgeView(
             avatar: avatar, prompt: prompt, caption: caption,
             onDone: { [weak self] in self?.hide(); onDone() },
             onSnooze: { [weak self] in self?.hide(); onSnooze() })
-        let host = NSHostingView(rootView: view)
+        present(view, autoHideAfter: .seconds(90), onTimeout: onSnooze)
+    }
+
+    /// Shows any bubble. Without a timeout it stays until `hide()`.
+    func present(_ content: some View, autoHideAfter timeout: Duration? = nil,
+                 onTimeout: @escaping () -> Void = {}) {
+        hide(animated: false)
+
+        let host = NSHostingView(rootView: content)
         let size = host.fittingSize
 
-        let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
-                            styleMask: [.borderless, .nonactivatingPanel],
-                            backing: .buffered, defer: false)
+        let panel = TypingPanel(contentRect: NSRect(origin: .zero, size: size),
+                                styleMask: [.borderless, .nonactivatingPanel],
+                                backing: .buffered, defer: false)
         panel.contentView = host
         panel.isFloatingPanel = true
         panel.level = .statusBar
@@ -33,7 +40,7 @@ final class NudgePanel {
         panel.isOpaque = false
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
-        panel.becomesKeyOnlyIfNeeded = true
+        panel.becomesKeyOnlyIfNeeded = true // only takes typing once you click the text box
 
         // Show it on the screen you are looking at (where the mouse is).
         let mouse = NSEvent.mouseLocation
@@ -43,11 +50,12 @@ final class NudgePanel {
         panel.orderFrontRegardless() // the view slides itself in
         self.panel = panel
 
+        guard let timeout else { return }
         autoHide = Task { [weak self] in
             try? await Task.sleep(for: timeout)
             guard !Task.isCancelled, let self, self.isShowing else { return }
             self.hide()
-            onSnooze()
+            onTimeout()
         }
     }
 
@@ -66,4 +74,9 @@ final class NudgePanel {
             panel.orderOut(nil)
         }
     }
+}
+
+/// Borderless panels refuse keyboard input by default; the log's text box needs it.
+private final class TypingPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
 }
